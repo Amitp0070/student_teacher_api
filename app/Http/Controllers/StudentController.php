@@ -128,32 +128,73 @@ class StudentController extends Controller
     {
         $request->validate([
             'name' => 'string|max:255',
-            'subject_ids' => 'array|exists:subjects,id'
+            'subject_ids' => 'nullable|array',
+            'subject_ids.*' => 'exists:subjects,id',
         ]);
 
         $student = Student::findOrFail($id);
-        $student->update($request->only('name'));
 
+        // Update student name if provided
+        if ($request->filled('name')) {
+            $student->update(['name' => $request->name]);
+        }
+
+        // Sync subjects if provided
         if ($request->has('subject_ids')) {
             $student->subjects()->sync($request->subject_ids);
         }
 
+        // Reload relationships
+        $student->load('subjects.teacher');
+
+        // Transform to match desired structure
+        $transformed = [
+            'student_id' => $student->id,
+            'student_name' => $student->name,
+            'subjects' => $student->subjects->map(function ($subject) {
+                return [
+                    'subject_id' => $subject->id,
+                    'subject_name' => $subject->title,
+                    'teacher_id' => $subject->teacher->id ?? null,
+                    'teacher_name' => $subject->teacher->name ?? 'N/A',
+                ];
+            })
+        ];
+
         return response()->json([
             'status' => true,
             'message' => 'Student updated successfully',
-            'data' => $student->load('subjects')
+            'data' => $transformed
         ]);
     }
 
     public function destroy($id)
     {
-        $student = Student::findOrFail($id);
+        // Student ko subjects ke sath load karna (delete hone se pehle data capture karna)
+        $student = Student::with('subjects')->findOrFail($id);
+
+        // Delete se pehle student ka naam aur subjects ka data save kar lete hain
+        $studentData = [
+            'student_name' => $student->name,
+            'subjects' => $student->subjects->map(function ($subject) {
+                return [
+                    'subject_id' => $subject->id,
+                    'subject_name' => $subject->title,
+                ];
+            }),
+        ];
+
+        // Pehle relation delete karna (pivot table se)
         $student->subjects()->detach();
+
+        // Ab actual student delete karna
         $student->delete();
 
+        // Response me deleted student ka data bhi bhejna
         return response()->json([
             'status' => true,
-            'message' => 'Student deleted successfully'
+            'message' => 'Student deleted successfully',
+            'deleted_data' => $studentData
         ]);
     }
 }
