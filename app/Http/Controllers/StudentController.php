@@ -76,27 +76,40 @@ class StudentController extends Controller
 
     public function store(Request $request)
     {
+        // Validate the request
         $request->validate([
             'name' => 'required|string|max:255',
             'subject_ids' => 'required|array',
-            'subject_ids.*' => 'exists:subjects,id',
+            'subject_ids.*' => 'exists:subjects,id', // Each subject ID must exist
         ]);
 
+        // Create the student
         $student = Student::create([
             'name' => $request->name,
         ]);
 
-        // Attach multiple subjects to the student
+        // Attach selected subjects to the student
         $student->subjects()->attach($request->subject_ids);
 
+        // Return a structured response
         return response()->json([
             'status' => true,
             'message' => 'Student created successfully with subjects',
             'data' => [
-                'student' => $student->load('subjects.teacher') // if you want to return full subject + teacher data
+                'student_id' => $student->id,
+                'student_name' => $student->name,
+                'subjects' => $student->subjects->map(function ($subject) {
+                    return [
+                        'subject_id' => $subject->id,
+                        'subject_title' => $subject->title,
+                        'teacher_id' => $subject->teacher->id ?? null,
+                        'teacher_name' => $subject->teacher->name ?? 'N/A',
+                    ];
+                }),
             ]
         ], 201);
     }
+
 
 
     public function show($id)
